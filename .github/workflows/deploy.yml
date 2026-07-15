@@ -1,0 +1,51 @@
+# Despliegue a GitHub Pages.
+#
+# config.js NO está en el repositorio (.gitignore): este workflow lo genera
+# en el momento del despliegue usando el secret YOUTUBE_API_KEY.
+#
+# Para configurar la clave:
+#   Repo → Settings → Secrets and variables → Actions → New repository secret
+#   Name: YOUTUBE_API_KEY   Value: tu clave de Google Cloud Console
+# Después vuelve a ejecutar el workflow (Actions → Deploy → Run workflow)
+# o haz cualquier push a main.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generar config.js con la API key del secret
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          KEY="${YOUTUBE_API_KEY:-TU_API_KEY_AQUI}"
+          printf 'const YOUTUBE_API_KEY = "%s";\n' "$KEY" > config.js
+          if [ "$KEY" = "TU_API_KEY_AQUI" ]; then
+            echo "::warning::El secret YOUTUBE_API_KEY no está configurado: la app se despliega sin clave y la búsqueda mostrará un error hasta que lo añadas."
+          fi
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

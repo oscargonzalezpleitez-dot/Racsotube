@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <!-- La pantalla del lente es de 600x600; deshabilitamos zoom para gestos precisos -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Racsotube — YouTube para Meta Ray-Ban Display</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Contenedor raíz: simula/ocupa el viewport 600x600 del lente -->
+  <main id="app" aria-live="polite">
+
+    <!-- ============ PANTALLA: INICIO ============ -->
+    <section id="screen-home" class="screen">
+      <header class="app-header">
+        <h1 class="logo">▶ Racsotube</h1>
+        <p class="hint" id="home-hint">↑↓ mover · Enter/pellizco seleccionar</p>
+      </header>
+
+      <!-- Campo de búsqueda: en escritorio se escribe con teclado;
+           en las gafas se puede usar dictado del sistema o los chips de historial -->
+      <form id="search-form" autocomplete="off">
+        <input
+          id="search-input"
+          type="search"
+          placeholder="Buscar en YouTube…"
+          aria-label="Buscar videos en YouTube"
+          data-focusable
+          enterkeyhint="search">
+      </form>
+
+      <!-- Historial de búsquedas recientes (localStorage) -->
+      <div class="home-block" id="recent-searches-block" hidden>
+        <h2 class="block-title">Búsquedas recientes</h2>
+        <div id="recent-searches" class="chip-row" role="list"></div>
+      </div>
+
+      <!-- Últimos videos vistos (localStorage) -->
+      <div class="home-block" id="recent-videos-block" hidden>
+        <h2 class="block-title">Vistos recientemente</h2>
+        <div id="recent-videos" class="video-list" role="list"></div>
+      </div>
+    </section>
+
+    <!-- ============ PANTALLA: RESULTADOS ============ -->
+    <section id="screen-results" class="screen" hidden>
+      <header class="app-header row">
+        <button class="back-btn" data-focusable data-action="back" aria-label="Volver">←</button>
+        <h1 class="screen-title" id="results-title">Resultados</h1>
+      </header>
+      <div id="results-list" class="video-list" role="list"></div>
+    </section>
+
+    <!-- ============ PANTALLA: REPRODUCTOR ============ -->
+    <section id="screen-player" class="screen" hidden>
+      <!-- El IFrame Player API monta el reproductor dentro de este div -->
+      <div id="player-frame"></div>
+      <div class="player-bar">
+        <button class="back-btn" data-focusable data-action="back" aria-label="Volver">←</button>
+        <p id="player-title" class="player-title"></p>
+      </div>
+    </section>
+
+    <!-- ============ ESTADOS GLOBALES ============ -->
+    <!-- Indicador de carga -->
+    <div id="loader" class="overlay" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Cargando…</p>
+    </div>
+
+    <!-- Panel de error (API key inválida, sin conexión, sin resultados…) -->
+    <div id="error-panel" class="overlay" hidden>
+      <p class="error-icon" aria-hidden="true">⚠</p>
+      <p id="error-message">Ocurrió un error.</p>
+      <button id="error-dismiss" class="big-btn" data-focusable>Entendido</button>
+    </div>
+
+  </main>
+
+  <!-- config.js define YOUTUBE_API_KEY (no se versiona con la clave real) -->
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <!-- La YouTube IFrame API se carga bajo demanda desde app.js
+       (solo cuando el usuario reproduce el primer video) -->
+</body>
+</html>

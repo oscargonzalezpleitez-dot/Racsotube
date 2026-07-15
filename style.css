@@ -1,0 +1,268 @@
+/* ============================================================
+   Racsotube — estilos para Meta Ray-Ban Display (600x600 px)
+   ------------------------------------------------------------
+   Principios de diseño para pantalla proyectada en el lente:
+   - Fondo negro puro: en un display de guía de onda, el negro
+     es transparente, así que #000 "desaparece" ante el usuario.
+   - Alto contraste, texto grande, pocos elementos por pantalla.
+   - El foco de navegación debe ser MUY visible (borde grueso).
+   ============================================================ */
+
+:root {
+  --bg: #000000;            /* transparente en el lente */
+  --surface: #16181c;       /* tarjetas / superficies */
+  --text: #f5f6f7;
+  --text-dim: #9aa0a6;
+  --accent: #ff3d3d;        /* rojo tipo YouTube, muy visible proyectado */
+  --focus: #ffd83d;         /* amarillo de foco: máxima visibilidad */
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  height: 100%;
+  overflow: hidden; /* la app gestiona su propio scroll por foco */
+}
+
+/* Contenedor raíz: en las gafas ocupa todo el viewport (600x600).
+   En un monitor de escritorio se limita a 600x600 y se centra,
+   para previsualizar exactamente lo que se verá en el lente. */
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  max-width: 600px;
+  max-height: 600px;
+  margin: 0 auto;
+  overflow: hidden;
+  background: var(--bg);
+}
+@media (min-width: 601px), (min-height: 601px) {
+  body { display: flex; align-items: center; justify-content: center; }
+  #app { border: 1px solid #2c2f33; border-radius: 8px; } /* marco solo en escritorio */
+}
+
+/* ---------- Pantallas ---------- */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 14px;
+  overflow-y: auto;
+  scrollbar-width: none;      /* sin barra de scroll: se navega por foco */
+}
+.screen::-webkit-scrollbar { display: none; }
+.screen[hidden] { display: none; }
+
+.app-header { flex-shrink: 0; }
+.app-header.row { display: flex; align-items: center; gap: 12px; }
+
+.logo {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+}
+.screen-title {
+  font-size: 22px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hint {
+  font-size: 15px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* ---------- Búsqueda ---------- */
+#search-input {
+  width: 100%;
+  font-size: 22px;
+  padding: 14px 18px;
+  color: var(--text);
+  background: var(--surface);
+  border: 3px solid transparent;
+  border-radius: var(--radius);
+  outline: none;
+}
+#search-input::placeholder { color: var(--text-dim); }
+
+/* ---------- Bloques de la pantalla de inicio ---------- */
+.home-block { flex-shrink: 0; }
+.block-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+/* Chips de búsquedas recientes */
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-size: 18px;
+  color: var(--text);
+  background: var(--surface);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+/* ---------- Listas de videos (resultados y recientes) ---------- */
+.video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.video-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 3px solid transparent;
+  border-radius: var(--radius);
+  padding: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  width: 100%;
+}
+.video-item img {
+  width: 110px;
+  height: 62px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: #000;
+}
+.video-item .meta { min-width: 0; }
+.video-item .title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  /* máximo 2 líneas para que quepan 5-6 resultados */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.video-item .channel {
+  font-size: 15px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Elemento "cargar más resultados" al final de la lista */
+.load-more {
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 14px;
+}
+
+/* ---------- Reproductor ---------- */
+#screen-player { padding: 0; gap: 0; }
+
+/* Video 16:9 dentro del cuadrado 600x600 → 600x338 centrado verticalmente */
+#player-frame {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-top: auto;
+  background: #000;
+}
+#player-frame iframe { width: 100%; height: 100%; display: block; }
+
+.player-bar {
+  margin-bottom: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+}
+.player-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------- Botones ---------- */
+.back-btn {
+  font-size: 24px;
+  line-height: 1;
+  color: var(--text);
+  background: var(--surface);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.big-btn {
+  font-size: 20px;
+  font-weight: 700;
+  color: #000;
+  background: var(--focus);
+  border: 3px solid transparent;
+  border-radius: var(--radius);
+  padding: 12px 28px;
+  cursor: pointer;
+}
+
+/* ---------- Foco de navegación (gestos / teclado) ----------
+   Es el indicador principal de la interfaz: debe verse desde
+   cualquier elemento sin ambigüedad. */
+[data-focusable]:focus,
+[data-focusable].focused {
+  border-color: var(--focus);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 216, 61, 0.35);
+}
+
+/* ---------- Overlays: carga y error ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.88);
+  text-align: center;
+  padding: 32px;
+  font-size: 20px;
+}
+.overlay[hidden] { display: none; }
+
+.error-icon { font-size: 52px; color: var(--focus); }
+#error-message { font-size: 20px; line-height: 1.4; max-width: 460px; }
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 5px solid var(--surface);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

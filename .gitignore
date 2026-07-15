@@ -1,0 +1,7 @@
+# Contiene la API key real de YouTube — nunca subirla al repositorio.
+# Usa config.example.js como plantilla pública.
+config.js
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
