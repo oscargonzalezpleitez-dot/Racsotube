@@ -62,6 +62,7 @@ const state = {
   pendingSend: null,       // video a enviar cuando se confirme el código de destino
   kbMode: "search",        // "search" | "code" — uso actual del teclado en pantalla
   kbText: "",              // texto compuesto en el teclado en pantalla
+  kbPhysical: false,       // true si se escribió con teclado físico (Enter = confirmar)
 };
 
 // Accesos directos al DOM
@@ -316,6 +317,9 @@ async function searchVideos(query, pageToken = null) {
         return;
       }
       showScreen("results");
+      // Limpiar el buscador: así el próximo pellizco sobre él siempre abre
+      // el teclado (la búsqueda queda guardada en los chips del historial)
+      el.searchInput.value = "";
     }
 
     appendResults(items);
@@ -588,6 +592,7 @@ function openKeyboard(mode) {
     state.kbText = "";
   }
   updateKbPreview();
+  state.kbPhysical = false;
   el.keyboard.hidden = false;
   // Empezar con el foco en la primera letra (fila qwerty), no en los números
   refreshFocusables(10);
@@ -782,12 +787,19 @@ function initKeyboardInput() {
       else if (e.key === "ArrowRight") { e.preventDefault(); kbNav(1, 0); }
       else if (e.key === "ArrowUp") { e.preventDefault(); kbNav(0, -1); }
       else if (e.key === "ArrowDown") { e.preventDefault(); kbNav(0, 1); }
-      else if (e.key === "Enter") { e.preventDefault(); selectFocused(); }
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        // Si se escribió con teclado físico, Enter confirma; con gestos,
+        // Enter (= pellizco) pulsa la tecla que tiene el foco
+        if (state.kbPhysical && state.kbText.trim()) kbConfirm();
+        else selectFocused();
+      }
       else if (e.key === "Escape") { closeKeyboard(); }
       else if (e.key === "Backspace") { e.preventDefault(); kbPress("⌫"); }
       else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         // Escritura directa con teclado físico (escritorio/teléfono)
         e.preventDefault();
+        state.kbPhysical = true;
         kbPress(e.key);
       }
       return;
@@ -851,10 +863,6 @@ function initTouchInput() {
     // ---- Tap (sin desplazamiento apreciable) = seleccionar ----
     if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) {
       const target = e.target.closest?.("[data-focusable]");
-      // Tap sobre el campo de búsqueda: dejar el comportamiento nativo
-      // (enfoca y abre el teclado del sistema si existe)
-      if (target === el.searchInput) return;
-
       e.preventDefault(); // suprime el click sintético que seguiría al tap
       if (target) {
         // Mover el foco al elemento tocado y activarlo
@@ -960,6 +968,16 @@ function init() {
   });
 
   el.errorDismiss.addEventListener("click", hideError);
+
+  // Pellizco/tap/click sobre el buscador vacío → abrir el teclado en pantalla.
+  // (Las gafas pueden entregar el pellizco como click, Enter o tap táctil;
+  // las tres rutas acaban aquí o en selectFocused, y ambas abren el teclado.)
+  el.searchInput.addEventListener("click", () => {
+    if (!el.searchInput.value.trim()) {
+      el.searchInput.blur();
+      openKeyboard("search");
+    }
+  });
 
   // Botones de volver (←) y de enviar a otro dispositivo (📲)
   document.querySelectorAll('[data-action="back"]').forEach((b) =>
