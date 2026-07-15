@@ -26,6 +26,26 @@ const MAX_RECENT_SEARCHES = 6;
 const MAX_RECENT_VIDEOS = 4;
 const LS_SEARCHES_KEY = "racsotube.recentSearches";
 const LS_VIDEOS_KEY = "racsotube.recentVideos";
+const LS_PAIR_KEY = "racsotube.pairCode";     // código propio (para recibir)
+const LS_TARGET_KEY = "racsotube.sendTarget"; // último código al que se envió
+
+// Servicio público de mensajería (pub/sub) usado para "enviar a los lentes":
+// el teléfono publica el video en un topic y las gafas lo reciben por SSE.
+// Solo viajan IDs/títulos de videos; el topic incluye un código aleatorio.
+const NTFY_TOPIC_PREFIX = "https://ntfy.sh/racsotube-";
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // sin caracteres confusos
+
+// Sugerencias para poder buscar con un solo pellizco cuando no hay historial
+const SUGGESTED_SEARCHES = ["música", "noticias", "lofi", "deportes", "tecnología", "recetas"];
+
+// Distribución del teclado en pantalla (navegable por gestos)
+const KB_ROWS = [
+  [..."1234567890"],
+  [..."qwertyuiop"],
+  [..."asdfghjklñ"],
+  [..."zxcvbnm", "⌫"],
+  ["✕", "␣", "OK"],
+];
 
 const state = {
   screen: "home",          // "home" | "results" | "player"
@@ -38,6 +58,10 @@ const state = {
   iframeApiLoading: false,
   pendingVideo: null,      // video a reproducir cuando la IFrame API termine de cargar
   autoMuted: false,        // true si el video arrancó silenciado por bloqueo de autoplay
+  playerNavigated: false,  // true si el usuario movió el foco dentro del reproductor
+  pendingSend: null,       // video a enviar cuando se confirme el código de destino
+  kbMode: "search",        // "search" | "code" — uso actual del teclado en pantalla
+  kbText: "",              // texto compuesto en el teclado en pantalla
 };
 
 // Accesos directos al DOM
@@ -59,6 +83,13 @@ const el = {
   errorPanel: $("error-panel"),
   errorMessage: $("error-message"),
   errorDismiss: $("error-dismiss"),
+  keyboard: $("keyboard"),
+  kbLabel: $("kb-label"),
+  kbPreview: $("kb-preview"),
+  kbRows: $("kb-rows"),
+  toast: $("toast"),
+  pairCode: $("pair-code"),
+  sendBtn: $("send-btn"),
 };
 
 /* ============================================================
@@ -90,12 +121,19 @@ function saveRecentVideo(video) {
  * Sistema de foco / navegación lineal
  * ============================================================ */
 
-/** Reconstruye la lista de elementos navegables de la pantalla visible. */
+/** Reconstruye la lista de elementos navegables de la capa visible.
+ *  Prioridad de capas: panel de error > teclado en pantalla > pantalla actual. */
 function refreshFocusables(preferredIndex = 0) {
-  const scope = el.errorPanel.hidden ? currentScreenEl() : el.errorPanel;
+  let scope = currentScreenEl();
+  if (!el.keyboard.hidden) scope = el.keyboard;
+  if (!el.errorPanel.hidden) scope = el.errorPanel;
   state.focusables = Array.from(scope.querySelectorAll("[data-focusable]"));
   state.focusIndex = Math.min(preferredIndex, state.focusables.length - 1);
   applyFocus();
+}
+
+function kbOpen() {
+  return !el.keyboard.hidden;
 }
 
 function currentScreenEl() {
@@ -118,6 +156,9 @@ function moveFocus(delta) {
   if (!state.focusables.length) return;
   const n = state.focusables.length;
   state.focusIndex = (state.focusIndex + delta + n) % n; // navegación circular
+  // En el reproductor, mover el foco indica intención de usar los botones
+  // (←, 📲): el siguiente "seleccionar" los activará en vez de pausar
+  if (state.screen === "player") state.playerNavigated = true;
   applyFocus();
 }
 
@@ -125,9 +166,15 @@ function moveFocus(delta) {
 function selectFocused() {
   const active = state.focusables[state.focusIndex];
   if (!active) return;
-  // En el campo de búsqueda, "seleccionar" lanza la búsqueda escrita
   if (active === el.searchInput) {
-    el.searchForm.requestSubmit();
+    // Con texto escrito, buscar; vacío (caso de las gafas, sin teclado
+    // físico), abrir el teclado en pantalla para componer la búsqueda
+    const q = el.searchInput.value.trim();
+    if (q) {
+      el.searchForm.requestSubmit();
+    } else {
+      openKeyboard("search");
+    }
   } else {
     active.click();
   }
@@ -138,6 +185,7 @@ function selectFocused() {
  * ============================================================ */
 function showScreen(name) {
   state.screen = name;
+  state.playerNavigated = false;
   el.home.hidden = name !== "home";
   el.results.hidden = name !== "results";
   el.player.hidden = name !== "player";
@@ -147,6 +195,10 @@ function showScreen(name) {
 function goBack() {
   if (!el.errorPanel.hidden) {
     hideError();
+    return;
+  }
+  if (kbOpen()) {
+    closeKeyboard();
     return;
   }
   if (state.screen === "player") {
@@ -331,11 +383,15 @@ function appendResults(items) {
 
 /** Pinta los bloques de la pantalla de inicio desde localStorage. */
 function renderHome() {
-  // Chips de búsquedas recientes
+  // Chips: historial de búsquedas o, si aún no hay, sugerencias
+  // (así siempre se puede buscar con un solo pellizco, sin teclado)
   const searches = loadJSON(LS_SEARCHES_KEY);
-  el.recentSearchesBlock.hidden = !searches.length;
+  const chips = searches.length ? searches : SUGGESTED_SEARCHES;
+  el.recentSearchesBlock.hidden = false;
+  el.recentSearchesBlock.querySelector(".block-title").textContent =
+    searches.length ? "Búsquedas recientes" : "Sugerencias";
   el.recentSearches.innerHTML = "";
-  searches.forEach((q) => {
+  chips.forEach((q) => {
     const chip = document.createElement("button");
     chip.className = "chip";
     chip.setAttribute("data-focusable", "");
@@ -492,6 +548,206 @@ function togglePlayback() {
 }
 
 /* ============================================================
+ * Teclado en pantalla (las gafas no tienen teclado físico)
+ * ------------------------------------------------------------
+ * Rejilla de teclas [data-focusable] navegable con los mismos
+ * gestos que el resto de la app: swipes mueven el foco (con
+ * salto de fila en vertical) y el pellizco pulsa la tecla.
+ * Se usa para dos cosas: componer búsquedas ("search") y
+ * escribir el código del dispositivo de destino ("code").
+ * ============================================================ */
+function buildKeyboard() {
+  KB_ROWS.forEach((row, r) => {
+    const rowEl = document.createElement("div");
+    rowEl.className = "kb-row";
+    row.forEach((key, c) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "kb-key";
+      btn.setAttribute("data-focusable", "");
+      btn.dataset.row = r;
+      btn.dataset.col = c;
+      btn.dataset.key = key;
+      if (key === "␣") btn.classList.add("kb-wide");
+      if (key === "OK") btn.classList.add("kb-ok");
+      btn.textContent = key;
+      btn.addEventListener("click", () => kbPress(key));
+      rowEl.appendChild(btn);
+    });
+    el.kbRows.appendChild(rowEl);
+  });
+}
+
+function openKeyboard(mode) {
+  state.kbMode = mode;
+  if (mode === "code") {
+    el.kbLabel.textContent = "Código del otro dispositivo";
+    state.kbText = localStorage.getItem(LS_TARGET_KEY) || "";
+  } else {
+    el.kbLabel.textContent = "Buscar en YouTube";
+    state.kbText = "";
+  }
+  updateKbPreview();
+  el.keyboard.hidden = false;
+  // Empezar con el foco en la primera letra (fila qwerty), no en los números
+  refreshFocusables(10);
+}
+
+function closeKeyboard() {
+  el.keyboard.hidden = true;
+  state.pendingSend = null;
+  refreshFocusables();
+}
+
+function updateKbPreview() {
+  el.kbPreview.textContent = (state.kbText || "") + "▏";
+}
+
+function kbPress(key) {
+  if (key === "⌫") {
+    state.kbText = state.kbText.slice(0, -1);
+  } else if (key === "␣") {
+    state.kbText += " ";
+  } else if (key === "✕") {
+    closeKeyboard();
+    return;
+  } else if (key === "OK") {
+    kbConfirm();
+    return;
+  } else {
+    state.kbText += state.kbMode === "code" ? key.toUpperCase() : key;
+  }
+  updateKbPreview();
+}
+
+function kbConfirm() {
+  const text = state.kbText.trim();
+  if (state.kbMode === "search") {
+    el.keyboard.hidden = true;
+    if (text) {
+      el.searchInput.value = text;
+      searchVideos(text);
+    } else {
+      refreshFocusables();
+    }
+  } else {
+    // Modo código: validar, guardar y enviar el video pendiente
+    if (text.length < 4) {
+      el.kbLabel.textContent = "El código tiene al menos 4 caracteres";
+      return;
+    }
+    const video = state.pendingSend;
+    el.keyboard.hidden = true;
+    state.pendingSend = null;
+    localStorage.setItem(LS_TARGET_KEY, text.toUpperCase());
+    refreshFocusables();
+    if (video) publishToDevice(text.toUpperCase(), video);
+  }
+}
+
+/** Navegación 2D dentro del teclado: dc = ±1 columna, dr = ±1 fila. */
+function kbNav(dc, dr) {
+  const current = state.focusables[state.focusIndex];
+  if (!current?.dataset.key) return;
+  let r = Number(current.dataset.row);
+  let c = Number(current.dataset.col);
+  if (dr) {
+    r = Math.min(Math.max(r + dr, 0), KB_ROWS.length - 1);
+    c = Math.min(c, KB_ROWS[r].length - 1); // ajustar a filas más cortas
+  } else {
+    const len = KB_ROWS[r].length;
+    c = (c + dc + len) % len; // circular dentro de la fila
+  }
+  const target = el.kbRows.querySelector(`[data-row="${r}"][data-col="${c}"]`);
+  const idx = state.focusables.indexOf(target);
+  if (idx >= 0) {
+    state.focusIndex = idx;
+    applyFocus();
+  }
+}
+
+/* ============================================================
+ * Enviar / recibir videos entre dispositivos (teléfono ⇄ gafas)
+ * ------------------------------------------------------------
+ * Sin backend propio: se usa el servicio público ntfy.sh como
+ * canal pub/sub. Cada dispositivo tiene un código aleatorio
+ * (persistido en localStorage) y escucha su topic por SSE.
+ * "Enviar" publica el video en el topic del código de destino.
+ * Nota: solo viajan IDs y títulos de videos públicos de YouTube.
+ * ============================================================ */
+function getPairCode() {
+  let code = localStorage.getItem(LS_PAIR_KEY);
+  if (!code) {
+    code = Array.from({ length: 6 }, () =>
+      CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+    ).join("");
+    localStorage.setItem(LS_PAIR_KEY, code);
+  }
+  return code;
+}
+
+function ntfyTopicUrl(code) {
+  return NTFY_TOPIC_PREFIX + code.toLowerCase();
+}
+
+/** Escucha permanente: cualquier video publicado en el topic propio se reproduce. */
+function startReceiver() {
+  if (typeof EventSource === "undefined") return;
+  try {
+    const es = new EventSource(`${ntfyTopicUrl(getPairCode())}/sse`);
+    es.onmessage = (e) => {
+      try {
+        const notif = JSON.parse(e.data);
+        const video = JSON.parse(notif.message);
+        if (video?.id && video?.title) {
+          showToast("📲 Video recibido");
+          playVideo(video);
+        }
+      } catch {
+        /* mensaje ajeno o malformado: ignorar */
+      }
+    };
+    // EventSource se reconecta solo tras cortes de red: no hace falta más
+  } catch (err) {
+    console.warn("[Racsotube] No se pudo iniciar el receptor:", err);
+  }
+}
+
+/** Publica el video en el topic del código de destino. */
+async function publishToDevice(code, video) {
+  try {
+    const res = await fetch(ntfyTopicUrl(code), {
+      method: "POST",
+      body: JSON.stringify({
+        id: video.id,
+        title: video.title,
+        channel: video.channel,
+        thumb: video.thumb,
+      }),
+    });
+    showToast(res.ok ? `Enviado a ${code} ✓` : "No se pudo enviar");
+  } catch {
+    showToast("Sin conexión: no se pudo enviar");
+  }
+}
+
+/** El botón 📲 del reproductor: pide/confirma el código y envía. */
+function sendCurrentVideo() {
+  const video = loadJSON(LS_VIDEOS_KEY)[0]; // el video en reproducción es el más reciente
+  if (!video) return;
+  state.pendingSend = video;
+  openKeyboard("code");
+}
+
+let toastTimer = null;
+function showToast(message) {
+  el.toast.textContent = message;
+  el.toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.toast.hidden = true; }, 3000);
+}
+
+/* ============================================================
  * Entradas: teclado, táctil y SDK de Meta Wearables
  * ============================================================ */
 
@@ -500,11 +756,18 @@ const actions = {
   prev: () => moveFocus(-1),
   next: () => moveFocus(1),
   select: () => {
-    // En el reproductor, "seleccionar" (pellizco/Enter/tap) SIEMPRE alterna
-    // play/pausa; para volver están el swipe a la derecha, Escape y el botón ←
-    if (state.screen === "player" && el.errorPanel.hidden) {
+    // En el reproductor, "seleccionar" (pellizco/Enter/tap) alterna play/pausa
+    // — salvo que el usuario haya movido el foco a un botón (←, 📲) o haya
+    // una capa (error/teclado) abierta
+    if (
+      state.screen === "player" &&
+      el.errorPanel.hidden &&
+      !kbOpen() &&
+      !state.playerNavigated
+    ) {
       togglePlayback();
     } else {
+      state.playerNavigated = false;
       selectFocused();
     }
   },
@@ -513,6 +776,23 @@ const actions = {
 
 function initKeyboardInput() {
   document.addEventListener("keydown", (e) => {
+    // ---- Con el teclado en pantalla abierto, navegación 2D ----
+    if (kbOpen()) {
+      if (e.key === "ArrowLeft") { e.preventDefault(); kbNav(-1, 0); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); kbNav(1, 0); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); kbNav(0, -1); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); kbNav(0, 1); }
+      else if (e.key === "Enter") { e.preventDefault(); selectFocused(); }
+      else if (e.key === "Escape") { closeKeyboard(); }
+      else if (e.key === "Backspace") { e.preventDefault(); kbPress("⌫"); }
+      else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Escritura directa con teclado físico (escritorio/teléfono)
+        e.preventDefault();
+        kbPress(e.key);
+      }
+      return;
+    }
+
     const typing = document.activeElement === el.searchInput;
     switch (e.key) {
       case "ArrowUp":
@@ -592,6 +872,12 @@ function initTouchInput() {
     }
 
     // ---- Swipe ----
+    if (kbOpen()) {
+      // Dentro del teclado los swipes navegan la rejilla en 2D
+      if (Math.abs(dy) > Math.abs(dx)) kbNav(0, dy > 0 ? -1 : 1);
+      else kbNav(dx > 0 ? 1 : -1, 0);
+      return;
+    }
     if (Math.abs(dy) > Math.abs(dx)) {
       dy > 0 ? actions.prev() : actions.next(); // vertical: mover foco
     } else if (dx > 0) {
@@ -675,10 +961,20 @@ function init() {
 
   el.errorDismiss.addEventListener("click", hideError);
 
+  // Botones de volver (←) y de enviar a otro dispositivo (📲)
+  document.querySelectorAll('[data-action="back"]').forEach((b) =>
+    b.addEventListener("click", goBack)
+  );
+  el.sendBtn.addEventListener("click", sendCurrentVideo);
+
   // Avisar en cuanto se pierda la conexión
   window.addEventListener("offline", () =>
     showError("Se perdió la conexión a internet.")
   );
+
+  buildKeyboard();
+  el.pairCode.textContent = getPairCode();
+  startReceiver();
 
   initKeyboardInput();
   initTouchInput();

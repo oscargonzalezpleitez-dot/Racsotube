@@ -12,6 +12,15 @@ contraste y navegación lineal por gestos.
 - ▶️ Reproducción con el **YouTube IFrame Player API** (autoplay, controles mínimos,
   play/pausa por gesto, video 16:9 centrado en el cuadrado 600×600).
 - 🕘 Historial en `localStorage`: búsquedas recientes (chips) y últimos videos vistos.
+- ⌨️ **Teclado en pantalla** navegable por gestos (las gafas no tienen teclado):
+  pellizca el campo de búsqueda vacío para abrirlo; swipes mueven el foco por la
+  rejilla (vertical = cambiar de fila) y el pellizco pulsa la tecla.
+- 📲 **Enviar del teléfono a los lentes**: abre la misma web en el teléfono,
+  reproduce un video y toca 📲; escribe el código que muestran los lentes en su
+  pantalla de inicio y el video empieza a reproducirse en las gafas al instante.
+  Usa el servicio público [ntfy.sh](https://ntfy.sh) como canal pub/sub (solo
+  viajan IDs y títulos de videos públicos; el topic incluye un código aleatorio
+  de 6 caracteres por dispositivo, guardado en `localStorage`).
 - 🎛️ Entrada multi-modal con las mismas 4 acciones (anterior / siguiente / seleccionar / volver):
   - **Escritorio:** flechas ↑↓←→, `Enter`, `Escape`/`Backspace`, mouse.
   - **Táctil:** swipe vertical (mover foco), tap (seleccionar), swipe a la derecha (volver).

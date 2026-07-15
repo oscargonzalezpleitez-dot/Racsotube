@@ -41,6 +41,15 @@
         <h2 class="block-title">Vistos recientemente</h2>
         <div id="recent-videos" class="video-list" role="list"></div>
       </div>
+
+      <!-- Emparejamiento para recibir videos desde otro dispositivo -->
+      <div class="home-block" id="pair-block">
+        <h2 class="block-title">📲 Enviar desde el teléfono</h2>
+        <p class="pair-info">
+          Abre esta misma web en tu teléfono, reproduce un video y toca 📲.
+          Código de este dispositivo: <strong id="pair-code">······</strong>
+        </p>
+      </div>
     </section>
 
     <!-- ============ PANTALLA: RESULTADOS ============ -->
@@ -59,6 +68,8 @@
       <div class="player-bar">
         <button class="back-btn" data-focusable data-action="back" aria-label="Volver">←</button>
         <p id="player-title" class="player-title"></p>
+        <button class="back-btn" id="send-btn" data-focusable data-action="send"
+                aria-label="Enviar a otro dispositivo">📲</button>
       </div>
     </section>
 
@@ -75,6 +86,16 @@
       <p id="error-message">Ocurrió un error.</p>
       <button id="error-dismiss" class="big-btn" data-focusable>Entendido</button>
     </div>
+
+    <!-- Teclado en pantalla navegable por gestos (las gafas no tienen teclado) -->
+    <div id="keyboard" class="overlay kb" hidden>
+      <p id="kb-label" class="kb-label">Buscar en YouTube</p>
+      <p id="kb-preview" class="kb-preview">▏</p>
+      <div id="kb-rows"></div>
+    </div>
+
+    <!-- Aviso breve (video enviado / recibido…) -->
+    <div id="toast" class="toast" hidden></div>
 
   </main>
 

@@ -266,6 +266,69 @@ html, body {
 .error-icon { font-size: 52px; color: var(--focus); }
 #error-message { font-size: 20px; line-height: 1.4; max-width: 460px; }
 
+/* ---------- Emparejamiento (recibir del teléfono) ---------- */
+.pair-info {
+  font-size: 15px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+.pair-info strong {
+  color: var(--focus);
+  font-size: 19px;
+  letter-spacing: 3px;
+}
+
+/* ---------- Teclado en pantalla ---------- */
+.kb { justify-content: flex-start; padding-top: 26px; gap: 10px; }
+.kb-label {
+  font-size: 15px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.kb-preview {
+  font-size: 24px;
+  font-weight: 600;
+  min-height: 34px;
+  max-width: 92%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+#kb-rows { display: flex; flex-direction: column; gap: 7px; }
+.kb-row { display: flex; justify-content: center; gap: 7px; }
+.kb-key {
+  min-width: 46px;
+  height: 48px;
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 3px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  padding: 0 10px;
+}
+.kb-key.kb-wide { min-width: 150px; }  /* barra espaciadora */
+.kb-key.kb-ok { color: #000; background: var(--focus); }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 20;
+  background: var(--surface);
+  border: 2px solid var(--focus);
+  border-radius: 999px;
+  padding: 10px 22px;
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.toast[hidden] { display: none; }
+
 .spinner {
   width: 48px;
   height: 48px;

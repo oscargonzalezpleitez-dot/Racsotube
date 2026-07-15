@@ -5,3 +5,8 @@ config.js
 # Sistema / editor
 .DS_Store
 Thumbs.db
+
+# Capturas personales
+*.jpg
+*.jpeg
+*.png
