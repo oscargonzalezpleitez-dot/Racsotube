@@ -28,6 +28,13 @@ const LS_SEARCHES_KEY = "racsotube.recentSearches";
 const LS_VIDEOS_KEY = "racsotube.recentVideos";
 const LS_PAIR_KEY = "racsotube.pairCode";     // código propio (para recibir)
 const LS_TARGET_KEY = "racsotube.sendTarget"; // último código al que se envió
+const LS_TOKENS_KEY = "racsotube.oauthTokens"; // tokens de la cuenta de YouTube
+
+// OAuth 2.0 "device flow" de Google (el de las Smart TV: código + google.com/device)
+const OAUTH_DEVICE_URL = "https://oauth2.googleapis.com/device/code";
+const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const OAUTH_SCOPE = "https://www.googleapis.com/auth/youtube.readonly";
+const YT_API = "https://www.googleapis.com/youtube/v3";
 
 // Servicio público de mensajería (pub/sub) usado para "enviar a los lentes":
 // el teléfono publica el video en un topic y las gafas lo reciben por SSE.
@@ -63,6 +70,9 @@ const state = {
   kbMode: "search",        // "search" | "code" — uso actual del teclado en pantalla
   kbText: "",              // texto compuesto en el teclado en pantalla
   kbPhysical: false,       // true si se escribió con teclado físico (Enter = confirmar)
+  resultsMode: "search",   // qué muestra la lista: "search" | "subs" | "channel" | "likes"
+  playerOrigin: "home",    // pantalla desde la que se abrió el reproductor
+  loginAbort: false,       // cancela el sondeo del login en curso
 };
 
 // Accesos directos al DOM
@@ -90,7 +100,15 @@ const el = {
   toast: $("toast"),
   pairCode: $("pair-code"),
   sendBtn: $("send-btn"),
+  accountBlock: $("account-block"),
+  accountActions: $("account-actions"),
+  loginPanel: $("login-panel"),
+  loginCode: $("login-code"),
+  loginStatus: $("login-status"),
+  loginCancel: $("login-cancel"),
 };
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ============================================================
  * Persistencia en localStorage
@@ -126,6 +144,7 @@ function saveRecentVideo(video) {
 function refreshFocusables(preferredIndex = 0) {
   let scope = currentScreenEl();
   if (!el.keyboard.hidden) scope = el.keyboard;
+  if (!el.loginPanel.hidden) scope = el.loginPanel;
   if (!el.errorPanel.hidden) scope = el.errorPanel;
   state.focusables = Array.from(scope.querySelectorAll("[data-focusable]"));
   state.focusIndex = Math.min(preferredIndex, state.focusables.length - 1);
@@ -185,6 +204,10 @@ function goBack() {
     hideError();
     return;
   }
+  if (!el.loginPanel.hidden) {
+    cancelLogin();
+    return;
+  }
   if (kbOpen()) {
     closeKeyboard();
     return;
@@ -192,13 +215,18 @@ function goBack() {
   if (state.screen === "player") {
     // Detener el video al salir para no seguir gastando batería/datos
     if (state.player && state.playerReady) state.player.stopVideo();
-    if (state.query) {
+    if (state.playerOrigin === "results" && el.resultsList.children.length) {
       showScreen("results");
     } else {
       renderHome(); // refrescar "vistos recientemente" con el video recién visto
       showScreen("home");
     }
   } else if (state.screen === "results") {
+    // Desde los videos de un canal se vuelve a la lista de suscripciones
+    if (state.resultsMode === "channel") {
+      showSubscriptions();
+      return;
+    }
     renderHome();
     showScreen("home");
   }
@@ -295,6 +323,7 @@ async function searchVideos(query, pageToken = null) {
 
     if (!pageToken) {
       // Búsqueda nueva
+      state.resultsMode = "search";
       state.query = query;
       saveRecentSearch(query);
       el.resultsTitle.textContent = `“${query}”`;
@@ -395,6 +424,9 @@ function renderHome() {
   el.recentVideos.innerHTML = "";
   videos.forEach((v) => el.recentVideos.appendChild(makeVideoItem(v)));
 
+  // Chips de "Mi cuenta" (login / suscripciones / me gusta)
+  renderAccountBlock();
+
   refreshFocusables();
 }
 
@@ -458,6 +490,7 @@ function createPlayer(video) {
 }
 
 function playVideo(video) {
+  if (state.screen !== "player") state.playerOrigin = state.screen;
   state.autoMuted = false;
   if (state.player && state.playerReady) state.player.unMute();
   saveRecentVideo(video);
@@ -530,6 +563,330 @@ function togglePlayback() {
   const s = state.player.getPlayerState();
   if (s === YT.PlayerState.PLAYING) state.player.pauseVideo();
   else state.player.playVideo();
+}
+
+/* ============================================================
+ * Cuenta de YouTube — OAuth 2.0 "device flow" (como las Smart TV)
+ * ------------------------------------------------------------
+ * La app muestra un código; el usuario lo escribe en
+ * google.com/device desde el teléfono y autoriza. La app sondea
+ * el endpoint de tokens hasta recibir acceso. Los tokens viven
+ * en localStorage y se renuevan solos con el refresh_token.
+ * Requiere un cliente OAuth de tipo "TV y dispositivos de
+ * entrada limitada" en config.js (ver README).
+ * ============================================================ */
+function oauthClientId() {
+  return typeof OAUTH_CLIENT_ID === "string" ? OAUTH_CLIENT_ID : "";
+}
+function oauthClientSecret() {
+  return typeof OAUTH_CLIENT_SECRET === "string" ? OAUTH_CLIENT_SECRET : "";
+}
+function loadTokens() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_TOKENS_KEY));
+  } catch {
+    return null;
+  }
+}
+function saveTokens(t) {
+  localStorage.setItem(LS_TOKENS_KEY, JSON.stringify(t));
+}
+function clearTokens() {
+  localStorage.removeItem(LS_TOKENS_KEY);
+}
+function isLoggedIn() {
+  return !!loadTokens()?.refresh_token;
+}
+
+function oauthForm(params) {
+  return {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(params).toString(),
+  };
+}
+
+/** Inicia el flujo de dispositivo: pide el código y arranca el sondeo. */
+async function startLogin() {
+  setLoading(true);
+  try {
+    const res = await fetch(OAUTH_DEVICE_URL, oauthForm({
+      client_id: oauthClientId(),
+      scope: OAUTH_SCOPE,
+    }));
+    const d = await res.json().catch(() => null);
+    if (!res.ok || !d?.user_code) {
+      showError("No se pudo iniciar el login de Google. Revisa el OAUTH_CLIENT_ID configurado.");
+      return;
+    }
+    el.loginCode.textContent = d.user_code;
+    el.loginStatus.textContent = "Esperando autorización…";
+    el.loginPanel.hidden = false;
+    refreshFocusables();
+    pollForToken(d);
+  } catch {
+    showError("Sin conexión: no se pudo iniciar el login.");
+  } finally {
+    setLoading(false);
+  }
+}
+
+function cancelLogin() {
+  state.loginAbort = true;
+  el.loginPanel.hidden = true;
+  refreshFocusables();
+}
+
+/** Sondea el endpoint de tokens hasta que el usuario autorice (o caduque). */
+async function pollForToken(d) {
+  state.loginAbort = false;
+  let interval = (d.interval || 5) * 1000;
+  const deadline = Date.now() + (d.expires_in || 1800) * 1000;
+
+  while (!state.loginAbort && Date.now() < deadline) {
+    await sleep(interval);
+    if (state.loginAbort) return;
+    let body = null;
+    try {
+      const res = await fetch(OAUTH_TOKEN_URL, oauthForm({
+        client_id: oauthClientId(),
+        client_secret: oauthClientSecret(),
+        device_code: d.device_code,
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      }));
+      body = await res.json().catch(() => null);
+    } catch {
+      continue; // corte de red puntual: reintentar en el siguiente ciclo
+    }
+    if (body?.access_token) {
+      saveTokens({
+        access_token: body.access_token,
+        refresh_token: body.refresh_token,
+        expires_at: Date.now() + (body.expires_in || 3600) * 1000,
+      });
+      el.loginPanel.hidden = true;
+      showToast("Sesión iniciada ✓");
+      renderHome();
+      return;
+    }
+    switch (body?.error) {
+      case "authorization_pending":
+        break; // el usuario aún no ha terminado en el teléfono
+      case "slow_down":
+        interval += 5000;
+        break;
+      case "access_denied":
+        cancelLogin();
+        showError("Rechazaste el acceso en Google.");
+        return;
+      default:
+        cancelLogin();
+        showError("El código caducó o falló el login. Inténtalo de nuevo.");
+        return;
+    }
+  }
+  if (!state.loginAbort) {
+    cancelLogin();
+    showError("El código caducó. Inténtalo de nuevo.");
+  }
+}
+
+function logout() {
+  clearTokens();
+  showToast("Sesión cerrada");
+  renderHome();
+}
+
+/** Devuelve un access token válido, renovándolo si hace falta. */
+async function ensureAccessToken() {
+  const t = loadTokens();
+  if (!t?.refresh_token) throw new Error("no-auth");
+  if (Date.now() < t.expires_at - 60000) return t.access_token;
+  const res = await fetch(OAUTH_TOKEN_URL, oauthForm({
+    client_id: oauthClientId(),
+    client_secret: oauthClientSecret(),
+    refresh_token: t.refresh_token,
+    grant_type: "refresh_token",
+  }));
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body?.access_token) {
+    clearTokens();
+    throw new Error("session-expired");
+  }
+  t.access_token = body.access_token;
+  t.expires_at = Date.now() + (body.expires_in || 3600) * 1000;
+  saveTokens(t);
+  return t.access_token;
+}
+
+/** GET autenticado contra la YouTube Data API. */
+async function authFetch(path, params) {
+  const token = await ensureAccessToken();
+  const qs = new URLSearchParams(params);
+  const res = await fetch(`${YT_API}/${path}?${qs}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const e = new Error("api-error");
+    e.status = res.status;
+    e.body = body;
+    throw e;
+  }
+  return body;
+}
+
+/** Traduce fallos de las secciones autenticadas a mensajes claros. */
+function handleAccountError(err) {
+  if (err.message === "no-auth" || err.message === "session-expired") {
+    renderHome();
+    showScreen("home");
+    showError("Tu sesión de YouTube caducó. Vuelve a iniciar sesión.");
+  } else if (!navigator.onLine) {
+    showError("Sin conexión a internet.");
+  } else {
+    showError(describeApiError(err.status || 0, err.body));
+  }
+}
+
+/* ---------- Pantallas de la cuenta ---------- */
+
+/** Lista de canales a los que estás suscrito. */
+async function showSubscriptions() {
+  setLoading(true);
+  try {
+    const data = await authFetch("subscriptions", {
+      part: "snippet",
+      mine: "true",
+      maxResults: "30",
+      order: "alphabetical",
+    });
+    state.resultsMode = "subs";
+    state.nextPageToken = null;
+    el.resultsTitle.textContent = "Suscripciones";
+    el.resultsList.innerHTML = "";
+    (data.items || []).forEach((s) => {
+      const ch = {
+        id: s.snippet.resourceId.channelId,
+        title: decodeEntities(s.snippet.title),
+        thumb: s.snippet.thumbnails?.default?.url || "",
+      };
+      const btn = document.createElement("button");
+      btn.className = "video-item";
+      btn.setAttribute("data-focusable", "");
+      const img = document.createElement("img");
+      img.src = ch.thumb;
+      img.alt = "";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const title = document.createElement("p");
+      title.className = "title";
+      title.textContent = ch.title;
+      meta.appendChild(title);
+      btn.append(img, meta);
+      btn.addEventListener("click", () => showChannelVideos(ch));
+      el.resultsList.appendChild(btn);
+    });
+    if (!el.resultsList.children.length) {
+      showError("No tienes suscripciones en esta cuenta.");
+      return;
+    }
+    showScreen("results");
+  } catch (err) {
+    handleAccountError(err);
+  } finally {
+    setLoading(false);
+  }
+}
+
+/** Últimos videos subidos por un canal (vía su playlist de subidas). */
+async function showChannelVideos(channel) {
+  setLoading(true);
+  try {
+    const chData = await authFetch("channels", {
+      part: "contentDetails",
+      id: channel.id,
+    });
+    const uploads = chData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploads) throw new Error("api-error");
+    const list = await authFetch("playlistItems", {
+      part: "snippet",
+      playlistId: uploads,
+      maxResults: "10",
+    });
+    const items = (list.items || [])
+      .filter((it) => it.snippet?.resourceId?.videoId)
+      .map((it) => ({
+        id: it.snippet.resourceId.videoId,
+        title: decodeEntities(it.snippet.title),
+        channel: channel.title,
+        thumb: it.snippet.thumbnails?.medium?.url || it.snippet.thumbnails?.default?.url || "",
+      }));
+    state.resultsMode = "channel";
+    state.nextPageToken = null;
+    el.resultsTitle.textContent = channel.title;
+    el.resultsList.innerHTML = "";
+    items.forEach((v) => el.resultsList.appendChild(makeVideoItem(v)));
+    showScreen("results");
+  } catch (err) {
+    handleAccountError(err);
+  } finally {
+    setLoading(false);
+  }
+}
+
+/** Videos marcados con "Me gusta". */
+async function showLikedVideos() {
+  setLoading(true);
+  try {
+    const data = await authFetch("videos", {
+      part: "snippet",
+      myRating: "like",
+      maxResults: "15",
+    });
+    const items = (data.items || []).map((v) => ({
+      id: v.id,
+      title: decodeEntities(v.snippet.title),
+      channel: decodeEntities(v.snippet.channelTitle),
+      thumb: v.snippet.thumbnails?.medium?.url || v.snippet.thumbnails?.default?.url || "",
+    }));
+    state.resultsMode = "likes";
+    state.nextPageToken = null;
+    el.resultsTitle.textContent = "Me gusta";
+    el.resultsList.innerHTML = "";
+    items.forEach((v) => el.resultsList.appendChild(makeVideoItem(v)));
+    if (!items.length) {
+      showError("No hay videos con Me gusta en esta cuenta.");
+      return;
+    }
+    showScreen("results");
+  } catch (err) {
+    handleAccountError(err);
+  } finally {
+    setLoading(false);
+  }
+}
+
+/** Pinta los chips del bloque "Mi cuenta" según el estado de sesión. */
+function renderAccountBlock() {
+  el.accountBlock.hidden = !oauthClientId();
+  if (!oauthClientId()) return;
+  el.accountActions.innerHTML = "";
+  const addChip = (label, onClick) => {
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.setAttribute("data-focusable", "");
+    chip.textContent = label;
+    chip.addEventListener("click", onClick);
+    el.accountActions.appendChild(chip);
+  };
+  if (isLoggedIn()) {
+    addChip("📺 Suscripciones", showSubscriptions);
+    addChip("❤ Me gusta", showLikedVideos);
+    addChip("Salir", logout);
+  } else {
+    addChip("👤 Iniciar sesión con YouTube", startLogin);
+  }
 }
 
 /* ============================================================
@@ -936,6 +1293,7 @@ function initWearableInput() {
  * ============================================================ */
 function init() {
   el.errorDismiss.addEventListener("click", hideError);
+  el.loginCancel.addEventListener("click", cancelLogin);
 
   // El buscador es un botón (no un <input>: el runtime de las gafas
   // intercepta la activación de los campos de texto y el pellizco nunca

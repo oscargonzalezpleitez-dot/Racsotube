@@ -38,6 +38,12 @@
         <div id="recent-videos" class="video-list" role="list"></div>
       </div>
 
+      <!-- Cuenta de YouTube: iniciar sesión / suscripciones / me gusta -->
+      <div class="home-block" id="account-block" hidden>
+        <h2 class="block-title">Mi cuenta</h2>
+        <div id="account-actions" class="chip-row" role="list"></div>
+      </div>
+
       <!-- Emparejamiento para recibir videos desde otro dispositivo -->
       <div class="home-block" id="pair-block">
         <h2 class="block-title">📲 Enviar desde el teléfono</h2>
@@ -81,6 +87,16 @@
       <p class="error-icon" aria-hidden="true">⚠</p>
       <p id="error-message">Ocurrió un error.</p>
       <button id="error-dismiss" class="big-btn" data-focusable>Entendido</button>
+    </div>
+
+    <!-- Login con cuenta de Google (flujo de dispositivo, como en las Smart TV) -->
+    <div id="login-panel" class="overlay" hidden>
+      <p class="login-step">1. En tu teléfono abre:</p>
+      <p class="login-url">google.com/device</p>
+      <p class="login-step">2. Escribe este código:</p>
+      <p id="login-code" class="login-code">···-···</p>
+      <p id="login-status" class="login-status">Esperando autorización…</p>
+      <button id="login-cancel" class="big-btn" data-focusable>Cancelar</button>
     </div>
 
     <!-- Teclado en pantalla navegable por gestos (las gafas no tienen teclado) -->

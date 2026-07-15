@@ -8,3 +8,9 @@
  * (Google Cloud Console → habilitar "YouTube Data API v3" → crear Clave de API).
  */
 const YOUTUBE_API_KEY = "TU_API_KEY_AQUI";
+
+// Credenciales OAuth para "Iniciar sesión con YouTube" (opcional; ver README).
+// Cliente de tipo "TV y dispositivos de entrada limitada" en Google Cloud Console.
+// Vacíos = el botón de iniciar sesión no aparece.
+const OAUTH_CLIENT_ID = "";
+const OAUTH_CLIENT_SECRET = "";

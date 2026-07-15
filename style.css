@@ -313,6 +313,21 @@ html, body {
 .kb-key.kb-wide { min-width: 150px; }  /* barra espaciadora */
 .kb-key.kb-ok { color: #000; background: var(--focus); }
 
+/* ---------- Login con Google (código de dispositivo) ---------- */
+.login-step { font-size: 17px; color: var(--text-dim); }
+.login-url {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+}
+.login-code {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: 6px;
+  color: var(--focus);
+}
+.login-status { font-size: 16px; color: var(--text-dim); min-height: 22px; }
+
 /* ---------- Toast ---------- */
 .toast {
   position: absolute;

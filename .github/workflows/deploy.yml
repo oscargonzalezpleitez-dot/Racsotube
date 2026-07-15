@@ -33,14 +33,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generar config.js con la API key del secret
+      - name: Generar config.js con los secrets
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          OAUTH_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_ID }}
+          OAUTH_CLIENT_SECRET: ${{ secrets.OAUTH_CLIENT_SECRET }}
         run: |
           KEY="${YOUTUBE_API_KEY:-TU_API_KEY_AQUI}"
-          printf 'const YOUTUBE_API_KEY = "%s";\n' "$KEY" > config.js
+          {
+            printf 'const YOUTUBE_API_KEY = "%s";\n' "$KEY"
+            printf 'const OAUTH_CLIENT_ID = "%s";\n' "${OAUTH_CLIENT_ID:-}"
+            printf 'const OAUTH_CLIENT_SECRET = "%s";\n' "${OAUTH_CLIENT_SECRET:-}"
+          } > config.js
           if [ "$KEY" = "TU_API_KEY_AQUI" ]; then
             echo "::warning::El secret YOUTUBE_API_KEY no está configurado: la app se despliega sin clave y la búsqueda mostrará un error hasta que lo añadas."
+          fi
+          if [ -z "$OAUTH_CLIENT_ID" ]; then
+            echo "::notice::Sin OAUTH_CLIENT_ID: la app se despliega sin inicio de sesión de YouTube (el resto funciona igual)."
           fi
 
       - uses: actions/upload-pages-artifact@v3
