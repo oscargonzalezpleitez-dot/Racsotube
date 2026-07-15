@@ -1,0 +1,14 @@
+{
+  "name": "Racsotube",
+  "short_name": "Racsotube",
+  "description": "Cliente de YouTube para Meta Ray-Ban Display",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#38b6ff",
+  "icons": [
+    { "src": "icons/icon-96.png", "sizes": "96x96", "type": "image/png" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

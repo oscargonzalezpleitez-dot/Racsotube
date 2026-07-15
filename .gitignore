@@ -10,3 +10,6 @@ Thumbs.db
 *.jpg
 *.jpeg
 *.png
+
+# …pero los iconos de la app sí se versionan
+!icons/*.png
