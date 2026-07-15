@@ -71,8 +71,7 @@ const el = {
   home: $("screen-home"),
   results: $("screen-results"),
   player: $("screen-player"),
-  searchForm: $("search-form"),
-  searchInput: $("search-input"),
+  searchBtn: $("search-btn"),
   recentSearchesBlock: $("recent-searches-block"),
   recentSearches: $("recent-searches"),
   recentVideosBlock: $("recent-videos-block"),
@@ -166,19 +165,7 @@ function moveFocus(delta) {
 /** Activa el elemento con foco (equivale a un click). */
 function selectFocused() {
   const active = state.focusables[state.focusIndex];
-  if (!active) return;
-  if (active === el.searchInput) {
-    // Con texto escrito, buscar; vacío (caso de las gafas, sin teclado
-    // físico), abrir el teclado en pantalla para componer la búsqueda
-    const q = el.searchInput.value.trim();
-    if (q) {
-      el.searchForm.requestSubmit();
-    } else {
-      openKeyboard("search");
-    }
-  } else {
-    active.click();
-  }
+  if (active) active.click();
 }
 
 /* ============================================================
@@ -317,9 +304,6 @@ async function searchVideos(query, pageToken = null) {
         return;
       }
       showScreen("results");
-      // Limpiar el buscador: así el próximo pellizco sobre él siempre abre
-      // el teclado (la búsqueda queda guardada en los chips del historial)
-      el.searchInput.value = "";
     }
 
     appendResults(items);
@@ -401,10 +385,7 @@ function renderHome() {
     chip.setAttribute("data-focusable", "");
     chip.setAttribute("role", "listitem");
     chip.textContent = q;
-    chip.addEventListener("click", () => {
-      el.searchInput.value = q;
-      searchVideos(q);
-    });
+    chip.addEventListener("click", () => searchVideos(q));
     el.recentSearches.appendChild(chip);
   });
 
@@ -630,7 +611,6 @@ function kbConfirm() {
   if (state.kbMode === "search") {
     el.keyboard.hidden = true;
     if (text) {
-      el.searchInput.value = text;
       searchVideos(text);
     } else {
       refreshFocusables();
@@ -805,7 +785,6 @@ function initKeyboardInput() {
       return;
     }
 
-    const typing = document.activeElement === el.searchInput;
     switch (e.key) {
       case "ArrowUp":
       case "ArrowLeft":
@@ -824,17 +803,12 @@ function initKeyboardInput() {
       case " ":
       case "Spacebar":
         // Barra espaciadora = seleccionar (algunos runtimes traducen así el tap)
-        if (!typing) {
-          e.preventDefault();
-          actions.select();
-        }
+        e.preventDefault();
+        actions.select();
         break;
       case "Escape":
-        actions.back();
-        break;
       case "Backspace":
-        // Backspace solo actúa como "volver" si no se está escribiendo
-        if (!typing) actions.back();
+        actions.back();
         break;
     }
   });
@@ -961,23 +935,12 @@ function initWearableInput() {
  * Arranque
  * ============================================================ */
 function init() {
-  el.searchForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const q = el.searchInput.value.trim();
-    if (q) searchVideos(q);
-  });
-
   el.errorDismiss.addEventListener("click", hideError);
 
-  // Pellizco/tap/click sobre el buscador vacío → abrir el teclado en pantalla.
-  // (Las gafas pueden entregar el pellizco como click, Enter o tap táctil;
-  // las tres rutas acaban aquí o en selectFocused, y ambas abren el teclado.)
-  el.searchInput.addEventListener("click", () => {
-    if (!el.searchInput.value.trim()) {
-      el.searchInput.blur();
-      openKeyboard("search");
-    }
-  });
+  // El buscador es un botón (no un <input>: el runtime de las gafas
+  // intercepta la activación de los campos de texto y el pellizco nunca
+  // llega). Cualquier variante del pellizco lo activa como a un botón más.
+  el.searchBtn.addEventListener("click", () => openKeyboard("search"));
 
   // Botones de volver (←) y de enviar a otro dispositivo (📲)
   document.querySelectorAll('[data-action="back"]').forEach((b) =>

@@ -88,17 +88,18 @@ html, body {
 }
 
 /* ---------- Búsqueda ---------- */
-#search-input {
+.search-btn {
   width: 100%;
   font-size: 22px;
   padding: 14px 18px;
-  color: var(--text);
+  color: var(--text-dim);
   background: var(--surface);
   border: 3px solid transparent;
   border-radius: var(--radius);
   outline: none;
+  text-align: left;
+  cursor: pointer;
 }
-#search-input::placeholder { color: var(--text-dim); }
 
 /* ---------- Bloques de la pantalla de inicio ---------- */
 .home-block { flex-shrink: 0; }

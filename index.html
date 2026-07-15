@@ -18,17 +18,13 @@
         <p class="hint" id="home-hint">↑↓ mover · Enter/pellizco seleccionar</p>
       </header>
 
-      <!-- Campo de búsqueda: en escritorio se escribe con teclado;
-           en las gafas se puede usar dictado del sistema o los chips de historial -->
-      <form id="search-form" autocomplete="off">
-        <input
-          id="search-input"
-          type="search"
-          placeholder="Buscar en YouTube…"
-          aria-label="Buscar videos en YouTube"
-          data-focusable
-          enterkeyhint="search">
-      </form>
+      <!-- Botón de búsqueda: abre el teclado en pantalla. Se usa un <button>
+           en lugar de un <input> porque el runtime de las gafas intercepta
+           la activación de los campos de texto y el pellizco nunca llega. -->
+      <button id="search-btn" class="search-btn" data-focusable
+              aria-label="Buscar videos en YouTube">
+        🔍 Buscar en YouTube…
+      </button>
 
       <!-- Historial de búsquedas recientes (localStorage) -->
       <div class="home-block" id="recent-searches-block" hidden>
