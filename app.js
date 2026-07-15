@@ -500,13 +500,9 @@ const actions = {
   prev: () => moveFocus(-1),
   next: () => moveFocus(1),
   select: () => {
-    // En el reproductor, "seleccionar" alterna play/pausa
-    // (salvo que el foco esté en el botón de volver)
-    if (
-      state.screen === "player" &&
-      el.errorPanel.hidden &&
-      !state.focusables[state.focusIndex]?.dataset.action
-    ) {
+    // En el reproductor, "seleccionar" (pellizco/Enter/tap) SIEMPRE alterna
+    // play/pausa; para volver están el swipe a la derecha, Escape y el botón ←
+    if (state.screen === "player" && el.errorPanel.hidden) {
       togglePlayback();
     } else {
       selectFocused();
@@ -533,6 +529,14 @@ function initKeyboardInput() {
         e.preventDefault();
         actions.select();
         break;
+      case " ":
+      case "Spacebar":
+        // Barra espaciadora = seleccionar (algunos runtimes traducen así el tap)
+        if (!typing) {
+          e.preventDefault();
+          actions.select();
+        }
+        break;
       case "Escape":
         actions.back();
         break;
@@ -544,10 +548,16 @@ function initKeyboardInput() {
   });
 }
 
-/** Swipes táctiles: útil en el preview del teléfono y como fallback. */
+/**
+ * Entrada táctil: swipes para navegar y tap para seleccionar.
+ * IMPORTANTE: el tap se maneja aquí directamente (no se delega al evento
+ * "click") porque algunos runtimes —incluidas las gafas— envían los eventos
+ * touch sin generar después el click sintético, y el pellizco quedaría mudo.
+ */
 function initTouchInput() {
   let startX = 0, startY = 0;
-  const THRESHOLD = 40; // px mínimos para considerar swipe
+  const THRESHOLD = 40;        // px mínimos para considerar swipe
+  let suppressClicksUntil = 0; // evita doble activación tap + click sintético
 
   document.addEventListener("touchstart", (e) => {
     startX = e.touches[0].clientX;
@@ -557,13 +567,53 @@ function initTouchInput() {
   document.addEventListener("touchend", (e) => {
     const dx = e.changedTouches[0].clientX - startX;
     const dy = e.changedTouches[0].clientY - startY;
-    if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return; // fue un tap: lo maneja click
-    if (Math.abs(dy) > Math.abs(dx)) {
-      dy > 0 ? actions.prev() : actions.next(); // swipe vertical: mover foco
-    } else if (dx > 0) {
-      actions.back(); // swipe a la derecha: volver
+
+    // ---- Tap (sin desplazamiento apreciable) = seleccionar ----
+    if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) {
+      const target = e.target.closest?.("[data-focusable]");
+      // Tap sobre el campo de búsqueda: dejar el comportamiento nativo
+      // (enfoca y abre el teclado del sistema si existe)
+      if (target === el.searchInput) return;
+
+      e.preventDefault(); // suprime el click sintético que seguiría al tap
+      if (target) {
+        // Mover el foco al elemento tocado y activarlo
+        const idx = state.focusables.indexOf(target);
+        if (idx >= 0) {
+          state.focusIndex = idx;
+          applyFocus();
+        }
+        target.click();
+      } else {
+        actions.select(); // tap en el fondo: activar el elemento con foco
+      }
+      suppressClicksUntil = Date.now() + 400;
+      return;
     }
-  }, { passive: true });
+
+    // ---- Swipe ----
+    if (Math.abs(dy) > Math.abs(dx)) {
+      dy > 0 ? actions.prev() : actions.next(); // vertical: mover foco
+    } else if (dx > 0) {
+      actions.back(); // a la derecha: volver
+    }
+  }, { passive: false });
+
+  // Si a pesar del preventDefault el navegador genera el click sintético,
+  // este guardián en fase de captura lo descarta para no activar dos veces.
+  document.addEventListener("click", (e) => {
+    if (Date.now() < suppressClicksUntil) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+
+  // Click de ratón/gesto en el fondo (fuera de cualquier elemento navegable):
+  // también cuenta como "seleccionar", por si el runtime traduce el pellizco
+  // a un click en el centro de la pantalla.
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest?.("[data-focusable]")) actions.select();
+  });
 }
 
 /**

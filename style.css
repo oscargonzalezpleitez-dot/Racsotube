@@ -66,8 +66,13 @@ html, body {
 .logo {
   font-size: 30px;
   font-weight: 800;
-  color: var(--accent);
   letter-spacing: 0.5px;
+  /* Degradado azul → verde sobre el texto del logo */
+  background: linear-gradient(90deg, #38b6ff 0%, #2ecc71 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: #38b6ff; /* respaldo si el navegador no soporta recorte de texto */
+  -webkit-text-fill-color: transparent;
 }
 .screen-title {
   font-size: 22px;
@@ -185,6 +190,10 @@ html, body {
   background: #000;
 }
 #player-frame iframe { width: 100%; height: 100%; display: block; }
+
+/* El iframe de YouTube no captura taps/pellizcos: la app los gestiona
+   (seleccionar = play/pausa). Sin esto, el iframe se traga los gestos. */
+#screen-player iframe { pointer-events: none; }
 
 .player-bar {
   margin-bottom: auto;
